@@ -98,7 +98,7 @@ class InteractiveCalibrator:
     def _save_calibration_data(self, filename="calibration_parameters.txt"):
         """Salva a matriz da câmera e os coeficientes de distorção em um arquivo de texto."""
         print(f"Salvando parâmetros de calibração em '{filename}'...")
-        with open(filename, 'w') as f:
+        with open(filename, 'a') as f:
             f.write(f"# Parâmetros de Calibração da Câmera\n")
             f.write(f"# Salvo em: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}\n")
             f.write("# ATENCAO: Estes parametros sao validos para imagens com resolucao dobrada (2x).\n\n")
@@ -237,7 +237,7 @@ class InteractiveCalibrator:
 
 
 if __name__ == '__main__':
-    PASTA_DE_IMAGENS = 'tabuleiro1'
+    PASTA_DE_IMAGENS = 'data/largeBoard/B'
     if not os.path.isdir(PASTA_DE_IMAGENS):
         print(f"Erro: A pasta '{PASTA_DE_IMAGENS}' nao foi encontrada.")
         print("Por favor, crie a pasta e coloque suas imagens de calibracao nela.")
