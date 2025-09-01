@@ -1,0 +1,22 @@
+--- Relatório de Falsos Negativos (Mochilas Não Detectadas) ---
+
+Total de imagens processadas: 50
+Total de imagens com mochila detectada (Verdadeiros Positivos): 41
+Total de imagens onde NENHUMA mochila foi detectada (Falsos Negativos): 9
+
+Taxa de Detecção (Recall no nível da imagem): 82.00%
+A Taxa de Detecção representa a porcentagem de imagens do total em que o modelo conseguiu encontrar pelo menos uma mochila.
+
+------------------------------------------------------------------
+Lista de arquivos onde nenhuma mochila foi detectada:
+image_035_calibrada.jpg
+image_008_calibrada.jpg
+image_040_calibrada.jpg
+image_039_calibrada.jpg
+image_036_calibrada.jpg
+image_014_calibrada.jpg
+image_006_calibrada.jpg
+image_034_calibrada.jpg
+image_037_calibrada.jpg
+------------------------------------------------------------------
+

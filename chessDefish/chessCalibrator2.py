@@ -81,7 +81,7 @@ class InteractiveCalibrator:
         self._draw_points(editor_img)
         
         # <-- MUDANÇA: Adicionado 'S' para Salvar no texto de ajuda
-        help_text = "N/P: Prox/Ant | D: Detectar | C: Calibrar | S: Salvar | R: Resetar | Q: Sair"
+        help_text = "N/P: Prox/Ant | D: Detectar | C: Calibrar | S: Salvar | U: Usar | R: Resetar | Q: Sair"
         cv2.putText(editor_img, help_text, (10, 25), cv2.FONT_HERSHEY_SIMPLEX, 0.6, (255, 255, 255), 2, cv2.LINE_AA)
         cv2.putText(editor_img, help_text, (10, 25), cv2.FONT_HERSHEY_SIMPLEX, 0.6, (0, 0, 0), 1, cv2.LINE_AA)
         cv2.imshow(self.window_name_editor, editor_img)
@@ -110,6 +110,67 @@ class InteractiveCalibrator:
             np.savetxt(f, self.dist_coeffs, fmt='%.6f')
         
         print("Parâmetros salvos com sucesso.")
+
+    def _apply_calibration_to_folder(self):
+        """
+        Aplica a calibração atual a todas as imagens de uma pasta especificada
+        pelo usuário e as salva em uma nova pasta.
+        """
+        if not self.is_calibrated:
+            print("\nERRO: A câmera precisa ser calibrada primeiro. Pressione 'c'.")
+            return
+
+        print("\n--- MODO DE APLICAÇÃO DA CALIBRAÇÃO ---")
+        try:
+            input_folder = input("Digite o caminho para a pasta com as imagens de entrada: ")
+            if not os.path.isdir(input_folder):
+                print(f"Erro: A pasta de entrada '{input_folder}' não existe.")
+                return
+
+            output_folder = input("Digite o caminho para a pasta de saída (será criada se não existir): ")
+            if not os.path.isdir(output_folder):
+                print(f"Criando pasta de saída: '{output_folder}'")
+                os.makedirs(output_folder)
+        except Exception as e:
+            print(f"Ocorreu um erro ao ler os caminhos: {e}")
+            return
+            
+        image_paths = sorted(glob.glob(os.path.join(input_folder, '*.jpg')))
+        if not image_paths:
+            print(f"Nenhuma imagem .jpg encontrada em '{input_folder}'.")
+            return
+            
+        print(f"\nProcessando {len(image_paths)} imagens...")
+        
+        for i, path in enumerate(image_paths):
+            print(f"  ({i+1}/{len(image_paths)}) Processando {os.path.basename(path)}...")
+            img = cv2.imread(path)
+            if img is None:
+                print(f"    - Erro ao ler a imagem, pulando.")
+                continue
+
+            # O processo de undistort deve respeitar a resolução usada na calibração (2x).
+            # 1. Armazena o tamanho original.
+            h, w = img.shape[:2]
+            
+            # 2. Redimensiona para 2x para corresponder à calibração.
+            img_resized = cv2.resize(img, (0, 0), fx=2.0, fy=2.0, interpolation=cv2.INTER_CUBIC)
+            
+            # 3. Aplica a correção de distorção.
+            img_undistorted_resized = cv2.undistort(img_resized, self.camera_matrix, self.dist_coeffs, None, None)
+            
+            # 4. Retorna a imagem corrigida ao tamanho original.
+            img_undistorted_original_size = cv2.resize(img_undistorted_resized, (w, h), interpolation=cv2.INTER_AREA)
+
+            # 5. Salva o resultado.
+            basename = os.path.basename(path)
+            name, ext = os.path.splitext(basename)
+            output_path = os.path.join(output_folder, f"{name}_calibrada{ext}")
+            cv2.imwrite(output_path, img_undistorted_original_size)
+
+        print("\nProcesso de correção de imagens concluído com sucesso!")
+        print(f"Imagens salvas em: '{output_folder}'")
+        print("----------------------------------------")
 
     def _recalibrate(self):
         """Executa a calibração com os pontos disponíveis."""
@@ -220,6 +281,9 @@ class InteractiveCalibrator:
             
             elif key == ord('c'):
                 self._recalibrate()
+
+            elif key == ord('u'):
+                self._apply_calibration_to_folder()
             
             elif key == ord('s'):
                 if self.is_calibrated:
