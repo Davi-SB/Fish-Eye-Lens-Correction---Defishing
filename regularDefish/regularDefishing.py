@@ -1,103 +1,157 @@
-# -*- coding: utf-8 -*-
+import os
+from pathlib import Path
+import pandas as pd
+from ultralytics import YOLO
+from tqdm import tqdm
 import cv2
 import numpy as np
-import os
 
 # --- 1. CONFIGURAÇÕES ---
-# Parâmetros que você encontrou com o calibrador manual
+# Parâmetros de detecção
+INPUT_PATH = "data/mochilaFishEye"
+YOLO_MODEL_NAME = 'yolov8x.pt'
+TARGET_CLASS = 'backpack'
+
+# Parâmetros de calibração manual (do seu script 'regularDefishing.py')
 FOCAL_LENGTH_FX = 297
 K1_TRACKBAR_VALUE = 0
 K2_TRACKBAR_VALUE = 159
 
-# Pastas de entrada e saída
-INPUT_FOLDER = 'fisheye_dataset'
-OUTPUT_FOLDER = 'regularDefish/regular_defished_images'
-
 # --- FIM DAS CONFIGURAÇÕES ---
 
+def apply_simple_defish(image, camera_matrix, dist_coeffs):
+    """Aplica a correção de distorção padrão do OpenCV."""
+    return cv2.undistort(image, camera_matrix, dist_coeffs)
 
-def main():
-    """
-    Função principal que processa as imagens.
-    """
-    print("Iniciando o processo de correção de imagens...")
+# --- SETUP DOS DIRETÓRIOS ---
+input_path = Path(INPUT_PATH)
+output_dir_name = f"{input_path.name}-{YOLO_MODEL_NAME.replace('.pt', '')}-SimpleDefish"
+output_path = Path("resultsYOLO") / output_dir_name
+output_path_detections = output_path / "detections"
+output_path_corrected = output_path / "corrected_images"
 
-    # Verifica se a pasta de entrada existe
-    if not os.path.isdir(INPUT_FOLDER):
-        print(f"Erro: A pasta de entrada '{INPUT_FOLDER}' não foi encontrada.")
-        print("Por favor, certifique-se de que a pasta com as imagens existe.")
-        return
+if output_path.exists():
+    print(f"--- O diretório de saída '{output_path}' já existe. Os arquivos serão sobrescritos.")
+    input("--- Pressione Enter para continuar ou Ctrl+C para cancelar...")
 
-    # Cria a pasta de saída se ela não existir
-    os.makedirs(OUTPUT_FOLDER, exist_ok=True)
-    print(f"Imagens corrigidas serão salvas em: '{OUTPUT_FOLDER}'")
+output_path_detections.mkdir(parents=True, exist_ok=True)
+output_path_corrected.mkdir(parents=True, exist_ok=True)
+print(f"Resultados serão salvos em: {output_path}")
 
-    # --- 2. CONVERSÃO DOS PARÂMETROS ---
-    # Converte os valores inteiros dos sliders para os coeficientes float
-    # Mapeamento usado no calibrador: (valor_do_slider - 100) / 100.0
-    k1_float = (K1_TRACKBAR_VALUE - 100) / 100.0
-    k2_float = (K2_TRACKBAR_VALUE - 100) / 100.0
+# --- CARREGAMENTO DO MODELO YOLO ---
+print(f"Carregando modelo {YOLO_MODEL_NAME}...")
+model = YOLO(YOLO_MODEL_NAME)
+print("Modelo carregado com sucesso.")
+
+# --- CONVERSÃO DOS PARÂMETROS DE CALIBRAÇÃO ---
+k1_float = (K1_TRACKBAR_VALUE - 100) / 100.0
+k2_float = (K2_TRACKBAR_VALUE - 100) / 100.0
+dist_coeffs = np.array([k1_float, k2_float, 0, 0, 0], dtype=np.float32)
+
+print("\nParâmetros de correção a serem aplicados:")
+print(f"  Distância Focal (fx): {FOCAL_LENGTH_FX}")
+print(f"  Coeficientes (k1, k2): {k1_float:.2f}, {k2_float:.2f}\n")
+
+# --- PROCESSAMENTO DAS IMAGENS ---
+all_detections_data = []
+false_negative_files = []
+image_extensions = ['.jpg', '.jpeg', '.png']
+image_files = [f for f in input_path.iterdir() if f.is_file() and f.suffix.lower() in image_extensions]
+total_image_count = len(image_files)
+
+print(f"Encontradas {total_image_count} imagens. Iniciando processamento com correção simples...")
+
+for image_file in tqdm(image_files, desc="Processando Imagens com Correção Simples"):
+    original_image = cv2.imread(str(image_file))
+    if original_image is None:
+        print(f"Aviso: Não foi possível ler a imagem {image_file.name}. Pulando.")
+        continue
+
+    # --- LÓGICA DE CORREÇÃO (DO SEU SCRIPT) ---
+    # 1. Obtém as dimensões da imagem
+    h, w = original_image.shape[:2]
     
-    # Cria o vetor de coeficientes de distorção que o OpenCV espera
-    # [k1, k2, p1, p2, k3]
-    dist_coeffs = np.array([k1_float, k2_float, 0, 0, 0], dtype=np.float32)
+    # 2. Constrói a matriz da câmera para esta imagem específica
+    camera_matrix = np.array([
+        [FOCAL_LENGTH_FX, 0, w / 2],
+        [0, FOCAL_LENGTH_FX, h / 2],
+        [0, 0, 1]
+    ], dtype=np.float32)
+    
+    # 3. Aplica a correção de distorção
+    corrected_image = apply_simple_defish(original_image, camera_matrix, dist_coeffs)
+    
+    # Salva a imagem corrigida para verificação
+    cv2.imwrite(str(output_path_corrected / image_file.name), corrected_image)
 
-    print("\nParâmetros de correção a serem aplicados:")
-    print(f"  Distância Focal (fx): {FOCAL_LENGTH_FX}")
-    print(f"  Coeficientes (k1, k2): {k1_float:.2f}, {k2_float:.2f}\n")
+    # --- DETECÇÃO COM YOLO ---
+    # 4. Envia a imagem CORRIGIDA para o modelo YOLO
+    results = model(corrected_image, verbose=False)
+    result = results[0]
 
-    # Lista todos os arquivos na pasta de entrada
-    file_list = os.listdir(INPUT_FOLDER)
-    image_files = [f for f in file_list if f.lower().endswith(('.png', '.jpg', '.jpeg', '.bmp', '.tiff'))]
+    # 5. Salva a imagem com as caixas de detecção
+    img_with_boxes = result.plot()
+    cv2.imwrite(str(output_path_detections / image_file.name), img_with_boxes)
 
-    if not image_files:
-        print("Nenhuma imagem encontrada na pasta de entrada.")
-        return
+    # --- COLETA DE DADOS PARA RELATÓRIO ---
+    backpack_found = False
+    for box in result.boxes:
+        class_id = int(box.cls[0])
+        class_name = model.names[class_id]
+        confidence = float(box.conf[0])
+        coordinates = box.xyxy[0].tolist()
 
-    # --- 3. PROCESSAMENTO DAS IMAGENS ---
-    for filename in image_files:
-        # Monta o caminho completo do arquivo de entrada
-        input_path = os.path.join(INPUT_FOLDER, filename)
+        detection_info = {
+            'nome_do_arquivo': image_file.name,
+            'classe_detectada': class_name,
+            'pontuacao_de_confianca': confidence,
+            'coordenadas_caixa': coordinates
+        }
+        all_detections_data.append(detection_info)
         
-        # Lê a imagem original
-        original_image = cv2.imread(input_path)
-        if original_image is None:
-            print(f"  Aviso: Não foi possível ler a imagem {filename}. Pulando...")
-            continue
+        if class_name == TARGET_CLASS:
+            backpack_found = True
             
-        print(f"Processando '{filename}'...")
-        
-        # Obtém as dimensões da imagem
-        h, w = original_image.shape[:2]
-        
-        # Constrói a matriz da câmera para esta imagem específica
-        # Assumimos que o ponto central (cx, cy) é o centro da imagem e fx = fy
-        camera_matrix = np.array([
-            [FOCAL_LENGTH_FX, 0, w / 2],
-            [0, FOCAL_LENGTH_FX, h / 2],
-            [0, 0, 1]
-        ], dtype=np.float32)
-        
-        # Aplica a correção de distorção
-        corrected_image = cv2.undistort(original_image, camera_matrix, dist_coeffs)
-        
-        # --- 4. COMBINAÇÃO E SALVAMENTO ---
-        # Adiciona legendas às imagens
-        cv2.putText(original_image, 'Original', (20, 40), cv2.FONT_HERSHEY_SIMPLEX, 1.2, (0, 0, 255), 2)
-        cv2.putText(corrected_image, 'Corrigida', (20, 40), cv2.FONT_HERSHEY_SIMPLEX, 1.2, (0, 255, 0), 2)
+    if not backpack_found:
+        false_negative_files.append(image_file.name)
 
-        # Empilha as imagens lado a lado
-        combined_image = np.hstack([original_image, corrected_image])
-        
-        # Define o nome do arquivo de saída
-        output_filename = f"{os.path.splitext(filename)[0]}_corrected.jpg"
-        output_path = os.path.join(OUTPUT_FOLDER, output_filename)
-        
-        # Salva a nova imagem
-        cv2.imwrite(output_path, combined_image)
+print("Processamento de imagens concluído.")
 
-    print(f"\nProcesso concluído! {len(image_files)} imagens foram corrigidas e salvas.")
+# --- GERAÇÃO DE RELATÓRIOS ---
+csv_path = output_path / "0 - all_detections_report.csv"
+print(f"Gerando arquivo de resultados em: {csv_path}")
+if all_detections_data:
+    df = pd.DataFrame(all_detections_data)
+    df.to_csv(csv_path, index=False, sep=';', decimal='.')
+else:
+    pd.DataFrame(columns=['nome_do_arquivo', 'classe_detectada', 'pontuacao_de_confianca', 'coordenadas_caixa']).to_csv(csv_path, index=False, sep=';')
 
+report_path = output_path / "1 - false_negative_report.txt"
+print(f"Gerando relatório de falsos negativos em: {report_path}")
 
-if __name__ == '__main__':
-    main()
+false_negative_count = len(false_negative_files)
+if total_image_count > 0:
+    detected_count = total_image_count - false_negative_count
+    detection_rate = (detected_count / total_image_count) * 100
+else:
+    detected_count = 0
+    detection_rate = 0.0
+
+with open(report_path, 'w', encoding='utf-8') as f:
+    f.write("--- Relatório de Falsos Negativos (Mochilas Não Detectadas) ---\n")
+    f.write("--- (Executado em imagens com Correção Simples) ---\n\n")
+    f.write(f"Total de imagens processadas: {total_image_count}\n")
+    f.write(f"Total de imagens com mochila detectada (Verdadeiros Positivos): {detected_count}\n")
+    f.write(f"Total de imagens onde NENHUMA mochila foi detectada (Falsos Negativos): {false_negative_count}\n\n")
+    f.write(f"Taxa de Detecção (Recall no nível da imagem): {detection_rate:.2f}%\n")
+    f.write("A Taxa de Detecção representa a porcentagem de imagens do total em que o modelo conseguiu encontrar pelo menos uma mochila.\n\n")
+    f.write("------------------------------------------------------------------\n")
+    f.write("Lista de arquivos onde nenhuma mochila foi detectada:\n")
+    if false_negative_files:
+        for file_name in false_negative_files:
+            f.write(f"- {file_name}\n")
+    else:
+        f.write("Nenhum falso negativo encontrado. Todas as imagens tiveram ao menos uma mochila detectada.\n")
+    f.write("------------------------------------------------------------------\n\n")
+
+print("\nAnálise concluída com sucesso!")

@@ -1,0 +1,19 @@
+--- Relatório de Falsos Negativos (Mochilas Não Detectadas) ---
+--- (Executado com Correção Defisheye Linear) ---
+
+Total de imagens processadas: 50
+Total de imagens com mochila detectada (Verdadeiros Positivos): 43
+Total de imagens onde NENHUMA mochila foi detectada (Falsos Negativos): 7
+
+Taxa de Detecção (Recall no nível da imagem): 86.00%
+------------------------------------------------------------------
+Lista de arquivos onde nenhuma mochila foi detectada:
+- image_005.jpg
+- image_008.jpg
+- image_014.jpg
+- image_034.jpg
+- image_036.jpg
+- image_037.jpg
+- image_040.jpg
+------------------------------------------------------------------
+
