@@ -4,7 +4,7 @@ import pandas as pd
 from ultralytics import YOLO
 from tqdm import tqdm
 
-INPUT_PATH = "data/mochilaFishEye"
+INPUT_PATH = "filterChessBoard"
 YOLO_MODEL_NAME = 'yolov8x.pt'
 TARGET_CLASS = 'backpack'
 
@@ -12,7 +12,7 @@ TARGET_CLASS = 'backpack'
 input_path = Path(INPUT_PATH)
 
 # Cria o diretorio de saída
-output_dir_name = f"{input_path.name}-{YOLO_MODEL_NAME.replace('.pt', '')}"
+output_dir_name = "filterChessBoard"
 output_path = Path("resultsYOLO") / output_dir_name
 
 if output_path.exists():
