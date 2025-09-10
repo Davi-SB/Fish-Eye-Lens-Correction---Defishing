@@ -15,7 +15,7 @@ from numpy import ndarray, hypot
 # --- TIPO DE CORREÇÃO ---
 # Escolha o método de correção de lente que deseja testar.
 # Opções disponíveis: "stereographic", "equalarea", "orthographic", "linear"
-PROJECTION_TYPE = "stereographic"
+PROJECTION_TYPE = "equalarea"
 
 # --- PARÂMETROS DO YOLO ---
 # Pasta onde suas imagens originais (com olho de peixe) estão localizadas.
@@ -37,13 +37,13 @@ DEFISHEYE_PARAMS = {
     "dtype": PROJECTION_TYPE,
 
     # Formato da imagem de entrada. 'fullframe' ou 'circular'
-    "format": "fullframe",
+    "format": "circular",
 
     # (Field of View) O campo de visão da sua lente olho de peixe original, em graus.
-    "fov": 180,
+    "fov": 130,
 
     # (Perspective Field of View) O campo de visão desejado para a imagem de SAÍDA.
-    "pfov": 120
+    "pfov": 90
 }
 
 # =================================================================================
@@ -59,7 +59,7 @@ class DefisheyeAlgorithm:
     """
     def __init__(self, infile, **kwargs):
         vkwargs = {"fov": 180, "pfov": 120, "xcenter": None, "ycenter": None,
-                   "radius": None, "pad": 0, "angle": 0, "dtype": "equalarea",
+                   "radius": None, "pad": 80, "angle": 0, "dtype": "equalarea",
                    "format": "fullframe"}
         self._start_att(vkwargs, kwargs)
 
