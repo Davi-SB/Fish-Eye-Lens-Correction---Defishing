@@ -6,6 +6,7 @@ import glob
 # ===================================================================================
 # FUNÇÕES DE CALIBRAÇÃO E DIAGNÓSTICO (INTOCADAS)
 # ===================================================================================
+FOLDER_PARAM = "parameterMatrix/"
 
 def calibrar_camera_olho_de_peixe(
     imagens_calibracao_path: str,
@@ -141,7 +142,7 @@ def diagnosticar_parametros(K, D, dimensoes):
 # MUDANÇA ESTRUTURAL: LÓGICA DE CORREÇÃO SEPARADA DA EXIBIÇÃO
 # ===================================================================================
 
-def executar_correcao_robusta(img, K, D, calib_dim):
+def execute_correction(img, K, D, calib_dim):
     """
     Esta função contém a LÓGICA DE CORREÇÃO da sua função original.
     Ela é o "motor" que tanto o modo interativo quanto o modo em lote irão usar.
@@ -150,39 +151,22 @@ def executar_correcao_robusta(img, K, D, calib_dim):
     img_resized = cv2.resize(img, calib_dim)
     
     undistorted = None
-    metodo_usado = None
     
-    # MÉTODO 1: undistortImage
     try:
         temp_undistorted = cv2.fisheye.undistortImage(img_resized, K, D, None, K)
         if temp_undistorted is not None and np.mean(temp_undistorted) > 5:
             undistorted = temp_undistorted
-            metodo_usado = "undistortImage"
     except Exception:
         pass
     
-    # MÉTODO 2: Mapeamento com diferentes valores de balance
     if undistorted is None:
-        for test_balance in [0.0, 0.3, 0.5, 0.7, 1.0]:
-            try:
-                new_K = cv2.fisheye.estimateNewCameraMatrixForUndistortRectify(K, D, calib_dim, np.eye(3), balance=test_balance)
-                map1, map2 = cv2.fisheye.initUndistortRectifyMap(K, D, np.eye(3), new_K, calib_dim, cv2.CV_16SC2)
-                test_result = cv2.remap(img_resized, map1, map2, cv2.INTER_LINEAR, cv2.BORDER_CONSTANT)
-                if np.mean(test_result) > 5:
-                    undistorted = test_result
-                    metodo_usado = f"remap (balance={test_balance})"
-                    break
-            except Exception:
-                continue
-    
-    if undistorted is None:
-        return None, None # Retorna falha se nada funcionou
+        return None # Retorna falha se nada funcionou
 
     # Redimensiona de volta para o tamanho original
     undistorted_final = cv2.resize(undistorted, (img.shape[1], img.shape[0]))
     
-    print(f"✓ Lógica de correção robusta aplicada com sucesso usando: {metodo_usado}")
-    return undistorted_final, metodo_usado
+    print(f"✓ Lógica de correção robusta aplicada com sucesso")
+    return undistorted_final
 
 
 def corrigir_imagem_fisheye_robusto(img_path, K, D, calib_dim):
@@ -198,7 +182,7 @@ def corrigir_imagem_fisheye_robusto(img_path, K, D, calib_dim):
     print(f"\nProcessando interativamente: {os.path.basename(img_path)}")
     
     # Chama o "motor" de correção
-    undistorted_final, metodo_usado = executar_correcao_robusta(img, K, D, calib_dim)
+    undistorted_final = execute_correction(img, K, D, calib_dim)
 
     if undistorted_final is None:
         print("❌ FALHA: Todos os métodos de correção falharam!")
@@ -222,7 +206,7 @@ def corrigir_imagem_fisheye_robusto(img_path, K, D, calib_dim):
     comparison = np.hstack([original_display, undistorted_display])
     
     cv2.putText(comparison, "ORIGINAL", (10, 30), cv2.FONT_HERSHEY_SIMPLEX, 1, (0, 255, 0), 2)
-    cv2.putText(comparison, f"CORRIGIDA ({metodo_usado})", (original_display.shape[1] + 10, 30), cv2.FONT_HERSHEY_SIMPLEX, 0.6, (0, 255, 0), 2)
+    cv2.putText(comparison, f"CORRIGIDA", (original_display.shape[1] + 10, 30), cv2.FONT_HERSHEY_SIMPLEX, 0.6, (0, 255, 0), 2)
     
     cv2.imshow("Comparacao: Original vs Corrigida", comparison)
     print("Pressione 'q' para fechar, 's' para salvar")
@@ -271,7 +255,7 @@ def processar_pasta_em_lote(pasta_entrada, pasta_saida, K, D, calib_dim):
             continue
         
         # CHAMA O MESMO MOTOR DE CORREÇÃO QUE O MODO INTERATIVO USA
-        imagem_corrigida, _ = executar_correcao_robusta(img, K, D, calib_dim)
+        imagem_corrigida = execute_correction(img, K, D, calib_dim)
         
         if imagem_corrigida is not None:
             caminho_saida = os.path.join(pasta_saida, nome_arquivo)
@@ -288,7 +272,7 @@ if __name__ == '__main__':
     # CONFIGURAÇÃO PRINCIPAL - AJUSTE AQUI
     # ===================================================================================
     # --- MODO DE OPERAÇÃO ---
-    MODO_LOTE = True
+    MODO_LOTE = False
 
     # --- CONFIGURAÇÕES DE CALIBRAÇÃO ---
     pasta_calibracao = 'data/largeBoard/B'
@@ -310,7 +294,7 @@ if __name__ == '__main__':
 
     if K is not None and D is not None:
         diagnosticar_parametros(K, D, dimensoes_calibracao)
-        np.savez('camera_calibration_fisheye.npz', K=K, D=D, dim=dimensoes_calibracao)
+        np.savez(f'{FOLDER_PARAM}camera_calibration_fisheye.npz', K=K, D=D, dim=dimensoes_calibracao)
         print(f"\n✓ Parâmetros salvos em 'camera_calibration_fisheye.npz'")
         
         if MODO_LOTE:
@@ -321,11 +305,15 @@ if __name__ == '__main__':
             )
         else:
             print("\nMODO DE TESTE INTERATIVO ATIVADO")
-            imagem_teste = os.path.join(pasta_calibracao, 'image_089.jpg')
-            if os.path.exists(imagem_teste):
-                corrigir_imagem_fisheye_robusto(imagem_teste, K, D, dimensoes_calibracao)
+            path_img_teste = os.path.join(pasta_calibracao, 'image_089.jpg')
+            
+            if os.path.exists(path_img_teste):
+                corrigir_imagem_fisheye_robusto(
+                    img_path=path_img_teste,
+                    K=K, D=D, calib_dim=dimensoes_calibracao
+                )
             else:
-                print(f"Imagem de teste não encontrada.")
+                print(f"Imagem de teste não encontrada em: {path_img_teste}")
     
     else:
         print("❌ Calibração falhou!")
