@@ -14,7 +14,7 @@ import streamlit as st
 PATH_GABARITO = r"confidence\GABARITO_DATA_GERAL.csv"        # CSV com colunas: Image, count
 PATH_REPORT_A = r"confidence\rawImages - oldYOLO\report.json"       # JSON: {"image_000.jpg": [0.77, 0.36, ...], ...}
 PATH_REPORT_B = r"confidence\CorrectedImages - YOLO11x\report.json"       # JSON idem
-THRESHOLD     = 0.45                     # confiança mínima para contar uma mochila
+THRESHOLD     = 0.40                    # confiança mínima para contar uma mochila
 
 st.set_page_config(page_title="Comparador: Dois Reports × Gabarito", layout="wide")
 
