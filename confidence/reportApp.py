@@ -183,7 +183,10 @@ sumB = summarize("B", dfB)
 colA, colB = st.columns(2)
 for (s, col) in [(sumA, colA), (sumB, colB)]:
     with col:
-        st.subheader(f"Resumo — Report {s['label']}")
+        if s['label'] == "A":
+            st.subheader(f"Resumo — Desempenho ANTES")
+        else:
+            st.subheader(f"Resumo — Desempenho DEPOIS")
         m1, m2, m3 = st.columns(3)
         m1.metric("Imagens", s["n_imagens"])
         m2.metric("Objetos (GT)", s["gt_sum"])
