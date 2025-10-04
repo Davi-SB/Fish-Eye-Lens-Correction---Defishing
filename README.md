@@ -18,11 +18,11 @@ graph LR
     C --> D[🎯 YOLO Detection]
     D --> E[📊 Object Detection Results]
     
-    style A fill:#ff9999
-    style B fill:#99ccff
-    style C fill:#99ff99
-    style D fill:#ffcc99
-    style E fill:#cc99ff
+    style A fill:#1B328F
+    style B fill:#1B328F
+    style C fill:#1B328F
+    style D fill:#1B328F
+    style E fill:#1B328F
 ```
 
 ### **Step-by-Step Process:**
