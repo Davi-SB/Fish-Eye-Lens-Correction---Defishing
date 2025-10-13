@@ -1,0 +1,12 @@
+# Configurações de IDE e SO
+.vscode/
+.DS_Store
+Thumbs.db
+
+# Arquivos de log e temporários
+*.log
+tmp/
+
+# Dependências (se usar npm/node no futuro)
+node_modules/
+package-lock.json
