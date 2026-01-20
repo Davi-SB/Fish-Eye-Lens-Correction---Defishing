@@ -1,0 +1,18 @@
+{
+    "filter_params": {
+        "blur_kernel": 95,
+        "contrast": 0.91,
+        "saturation": 0.99,
+        "erode_iterations": 1,
+        "dilate_iterations": 2
+    },
+    "hsv_range": {
+        "h_min": 0,
+        "s_min": 114,
+        "v_min": 100,
+        "h_max": 179,
+        "s_max": 175,
+        "v_max": 255
+    },
+    "min_area": 500
+}

@@ -1,0 +1,18 @@
+{
+    "filter_params": {
+        "blur_kernel": 8,
+        "contrast": 1.12,
+        "saturation": 2.89,
+        "erode_iterations": 2,
+        "dilate_iterations": 2
+    },
+    "circle_params": {
+        "black_threshold": 36,
+        "min_area": 900,
+        "max_area": 36900,
+        "min_circularity": 0.35,
+        "use_adaptive": true,
+        "adaptive_block_size": 42,
+        "adaptive_c": 2
+    }
+}
