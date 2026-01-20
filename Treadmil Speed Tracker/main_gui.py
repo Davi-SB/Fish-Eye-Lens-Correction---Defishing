@@ -24,9 +24,16 @@ from utils import (
 
 
 CONFIG_FILE = "config_1.json"
+CAMERA_CONFIG_FILE = "camera_config.json"
 VIDEO_SOURCE = 0
 REAL_DISTANCE_BETWEEN_MARKERS = 0.30  # meters
 VIRTUAL_LINE_POSITION = 0.5  # center of frame
+
+# Default camera settings for high-speed tracking
+DEFAULT_FPS = 60
+DEFAULT_WIDTH = 1280
+DEFAULT_HEIGHT = 720
+DEFAULT_EXPOSURE = -6  # Lower exposure for fast motion
 
 
 class CrossingState(Enum):
@@ -111,6 +118,16 @@ class SpeedTrackerGUI:
         self.distance = REAL_DISTANCE_BETWEEN_MARKERS
         self.line_position = VIRTUAL_LINE_POSITION
         
+        # Camera settings
+        self.camera_config = {
+            "fps": DEFAULT_FPS,
+            "width": DEFAULT_WIDTH,
+            "height": DEFAULT_HEIGHT,
+            "exposure": DEFAULT_EXPOSURE,
+            "source_type": "webcam"  # webcam, rtsp, http
+        }
+        self._load_camera_config()
+        
         # Video capture
         self.cap = None
         self.is_running = False
@@ -146,6 +163,27 @@ class SpeedTrackerGUI:
                 self.circle_params = BlackCircleParams(**config["circle_params"])
         except Exception as e:
             messagebox.showerror("Error", f"Failed to load config:\n{e}")
+    
+    def _load_camera_config(self):
+        """Load camera configuration from file."""
+        camera_config_path = Path(CAMERA_CONFIG_FILE)
+        if not camera_config_path.exists():
+            return
+        
+        try:
+            with open(camera_config_path, "r") as f:
+                saved_config = json.load(f)
+                self.camera_config.update(saved_config)
+        except Exception as e:
+            print(f"Failed to load camera config: {e}")
+    
+    def _save_camera_config(self):
+        """Save camera configuration to file."""
+        try:
+            with open(CAMERA_CONFIG_FILE, "w") as f:
+                json.dump(self.camera_config, f, indent=4)
+        except Exception as e:
+            print(f"Failed to save camera config: {e}")
     
     def _create_widgets(self):
         """Create all GUI widgets."""
@@ -214,6 +252,18 @@ class SpeedTrackerGUI:
             bg="#9C27B0",
             fg="white",
             activebackground="#7B1FA2",
+            width=12,
+            height=2
+        ).pack(side=tk.LEFT, padx=5)
+        
+        tk.Button(
+            control_frame,
+            text="📹 Camera Setup",
+            command=self._show_camera_setup,
+            font=("Arial", 12, "bold"),
+            bg="#00BCD4",
+            fg="white",
+            activebackground="#0097A7",
             width=12,
             height=2
         ).pack(side=tk.LEFT, padx=5)
@@ -332,9 +382,17 @@ class SpeedTrackerGUI:
             return
         
         try:
-            self.cap = cv2.VideoCapture(self.video_source)
+            # Initialize video capture based on source type
+            source = self.video_source
+            if self.camera_config["source_type"] in ["rtsp", "http"]:
+                source = self.video_source  # Already a URL string
+            
+            self.cap = cv2.VideoCapture(source)
             if not self.cap.isOpened():
-                raise Exception(f"Cannot open video source {self.video_source}")
+                raise Exception(f"Cannot open video source {source}")
+            
+            # Configure camera for high-performance capture
+            self._configure_camera()
             
             self.is_running = True
             self.start_btn.config(state=tk.DISABLED)
@@ -436,6 +494,392 @@ class SpeedTrackerGUI:
         self.crossings_label.config(text="0")
         
         messagebox.showinfo("✅ Reset", "Statistics reset successfully!")
+    
+    def _configure_camera(self):
+        """Configure camera for high-performance capture."""
+        if not self.cap or not self.cap.isOpened():
+            return
+        
+        try:
+            # Set resolution
+            self.cap.set(cv2.CAP_PROP_FRAME_WIDTH, self.camera_config["width"])
+            self.cap.set(cv2.CAP_PROP_FRAME_HEIGHT, self.camera_config["height"])
+            
+            # Set FPS
+            self.cap.set(cv2.CAP_PROP_FPS, self.camera_config["fps"])
+            
+            # Set exposure (lower = faster shutter = less motion blur)
+            if self.camera_config.get("exposure") is not None:
+                self.cap.set(cv2.CAP_PROP_AUTO_EXPOSURE, 0.25)  # Manual mode
+                self.cap.set(cv2.CAP_PROP_EXPOSURE, self.camera_config["exposure"])
+            
+            # Disable auto-focus for consistent performance
+            self.cap.set(cv2.CAP_PROP_AUTOFOCUS, 0)
+            
+            # Set buffer size to 1 for lowest latency
+            self.cap.set(cv2.CAP_PROP_BUFFERSIZE, 1)
+            
+            print(f"[INFO] Camera configured:")
+            print(f"  Resolution: {int(self.cap.get(cv2.CAP_PROP_FRAME_WIDTH))}x{int(self.cap.get(cv2.CAP_PROP_FRAME_HEIGHT))}")
+            print(f"  FPS: {int(self.cap.get(cv2.CAP_PROP_FPS))}")
+            print(f"  Exposure: {self.cap.get(cv2.CAP_PROP_EXPOSURE)}")
+            
+        except Exception as e:
+            print(f"[WARNING] Failed to configure some camera settings: {e}")
+    
+    def _test_stream_url(self, base_url):
+        """Test different stream endpoints and return working URL."""
+        # Common IP Webcam endpoints
+        endpoints = [
+            "/video",                    # MJPEG stream
+            "/videofeed",                # Alternative MJPEG
+            "/video?action=stream",      # Action parameter
+            "/mjpegfeed?640x480",       # Specific resolution
+            "/shot.jpg",                # Single frame (fallback)
+        ]
+        
+        # Clean base URL
+        base_url = base_url.rstrip('/')
+        
+        print(f"[INFO] Testing stream endpoints for {base_url}...")
+        
+        for endpoint in endpoints:
+            test_url = base_url + endpoint
+            print(f"[TEST] Trying: {test_url}")
+            
+            try:
+                cap = cv2.VideoCapture(test_url)
+                if cap.isOpened():
+                    ret, frame = cap.read()
+                    cap.release()
+                    
+                    if ret and frame is not None:
+                        print(f"[SUCCESS] ✓ Working endpoint: {test_url}")
+                        return test_url
+                    else:
+                        print(f"[FAIL] Could not read frame")
+                else:
+                    print(f"[FAIL] Could not open stream")
+            except Exception as e:
+                print(f"[FAIL] Error: {e}")
+        
+        print(f"[ERROR] No working endpoints found for {base_url}")
+        return None
+    
+    def _show_camera_setup(self):
+        """Show camera setup dialog."""
+        setup_window = tk.Toplevel(self.root)
+        setup_window.title("📹 Camera Setup")
+        setup_window.geometry("550x700")
+        setup_window.configure(bg="#2b2b2b")
+        setup_window.transient(self.root)
+        
+        tk.Label(
+            setup_window,
+            text="📹 Camera Configuration",
+            font=("Arial", 18, "bold"),
+            bg="#2b2b2b",
+            fg="white"
+        ).pack(pady=20)
+        
+        # Source type
+        source_frame = tk.LabelFrame(
+            setup_window,
+            text="Camera Source",
+            font=("Arial", 12, "bold"),
+            bg="#1e1e1e",
+            fg="#4CAF50",
+            padx=20,
+            pady=15
+        )
+        source_frame.pack(fill=tk.X, padx=20, pady=10)
+        
+        source_type = tk.StringVar(value=self.camera_config.get("source_type", "webcam"))
+        
+        tk.Radiobutton(
+            source_frame,
+            text="💻 Webcam (USB/Built-in)",
+            variable=source_type,
+            value="webcam",
+            font=("Arial", 11),
+            bg="#1e1e1e",
+            fg="white",
+            selectcolor="#2b2b2b",
+            activebackground="#1e1e1e"
+        ).pack(anchor="w", pady=5)
+        
+        tk.Radiobutton(
+            source_frame,
+            text="📱 RTSP Stream (IP Webcam, DroidCam)",
+            variable=source_type,
+            value="rtsp",
+            font=("Arial", 11),
+            bg="#1e1e1e",
+            fg="white",
+            selectcolor="#2b2b2b",
+            activebackground="#1e1e1e"
+        ).pack(anchor="w", pady=5)
+        
+        tk.Radiobutton(
+            source_frame,
+            text="🌐 HTTP/MJPEG Stream",
+            variable=source_type,
+            value="http",
+            font=("Arial", 11),
+            bg="#1e1e1e",
+            fg="white",
+            selectcolor="#2b2b2b",
+            activebackground="#1e1e1e"
+        ).pack(anchor="w", pady=5)
+        
+        # Source input
+        input_frame = tk.Frame(setup_window, bg="#2b2b2b")
+        input_frame.pack(fill=tk.X, padx=20, pady=10)
+        
+        tk.Label(
+            input_frame,
+            text="Source (0 for webcam or URL):",
+            font=("Arial", 11),
+            bg="#2b2b2b",
+            fg="white"
+        ).pack(anchor="w")
+        
+        source_entry = tk.Entry(
+            input_frame,
+            font=("Arial", 11),
+            width=50
+        )
+        source_entry.insert(0, str(self.video_source))
+        source_entry.pack(fill=tk.X, pady=5)
+        
+        # Test button
+        def test_url():
+            url = source_entry.get().strip()
+            if not url or url.isdigit():
+                messagebox.showinfo("Info", "Enter a URL to test")
+                return
+            
+            # If it's just base URL, test endpoints
+            if url.endswith(":8080") or url.endswith(":8080/"):
+                working_url = self._test_stream_url(url)
+                if working_url:
+                    source_entry.delete(0, tk.END)
+                    source_entry.insert(0, working_url)
+                    messagebox.showinfo("✅ Success", f"Found working endpoint:\n{working_url}")
+                else:
+                    messagebox.showerror("❌ Failed", "No working endpoints found.\nCheck the guide for correct URLs.")
+            else:
+                # Test the exact URL
+                try:
+                    cap = cv2.VideoCapture(url)
+                    if cap.isOpened():
+                        ret, frame = cap.read()
+                        cap.release()
+                        if ret and frame is not None:
+                            messagebox.showinfo("✅ Success", "Stream is working!")
+                        else:
+                            messagebox.showerror("❌ Failed", "Could not read frames from stream")
+                    else:
+                        messagebox.showerror("❌ Failed", "Could not open stream")
+                except Exception as e:
+                    messagebox.showerror("❌ Error", f"Failed to test:\n{str(e)}")
+        
+        test_btn_frame = tk.Frame(input_frame, bg="#2b2b2b")
+        test_btn_frame.pack(fill=tk.X, pady=5)
+        
+        tk.Button(
+            test_btn_frame,
+            text="🔍 Test URL",
+            command=test_url,
+            font=("Arial", 10, "bold"),
+            bg="#2196F3",
+            fg="white",
+            activebackground="#0b7dda"
+        ).pack(side=tk.LEFT, padx=5)
+        
+        tk.Label(
+            test_btn_frame,
+            text="(Tests connection and finds working endpoint)",
+            font=("Arial", 8, "italic"),
+            bg="#2b2b2b",
+            fg="#9E9E9E"
+        ).pack(side=tk.LEFT, padx=5)
+        
+        # Examples
+        examples_frame = tk.LabelFrame(
+            setup_window,
+            text="📝 URL Examples",
+            font=("Arial", 10, "bold"),
+            bg="#1e1e1e",
+            fg="#2196F3",
+            padx=15,
+            pady=10
+        )
+        examples_frame.pack(fill=tk.X, padx=20, pady=10)
+        
+        examples_text = tk.Text(
+            examples_frame,
+            height=5,
+            font=("Consolas", 9),
+            bg="#2b2b2b",
+            fg="#4CAF50",
+            relief=tk.FLAT,
+            wrap=tk.WORD
+        )
+        examples_text.insert("1.0", 
+            "Base URL (auto-detect): http://192.168.1.135:8080\\n"
+            "MJPEG: http://192.168.1.135:8080/video\\n"
+            "RTSP: rtsp://192.168.1.135:8080/h264_ulaw.sdp\\n"
+            "Alternative: http://192.168.1.135:8080/video?action=stream"
+        )
+        examples_text.config(state=tk.DISABLED)
+        examples_text.pack(fill=tk.X)
+        
+        # Performance settings
+        perf_frame = tk.LabelFrame(
+            setup_window,
+            text="🚀 High-Performance Settings",
+            font=("Arial", 12, "bold"),
+            bg="#1e1e1e",
+            fg="#FF9800",
+            padx=20,
+            pady=15
+        )
+        perf_frame.pack(fill=tk.X, padx=20, pady=10)
+        
+        # FPS
+        fps_frame = tk.Frame(perf_frame, bg="#1e1e1e")
+        fps_frame.pack(fill=tk.X, pady=5)
+        tk.Label(
+            fps_frame,
+            text="FPS (frames/sec):",
+            font=("Arial", 10),
+            bg="#1e1e1e",
+            fg="white",
+            width=20,
+            anchor="w"
+        ).pack(side=tk.LEFT)
+        fps_var = tk.IntVar(value=self.camera_config.get("fps", DEFAULT_FPS))
+        tk.Spinbox(
+            fps_frame,
+            from_=15,
+            to=120,
+            textvariable=fps_var,
+            font=("Arial", 10),
+            width=10
+        ).pack(side=tk.LEFT, padx=10)
+        tk.Label(
+            fps_frame,
+            text="(60+ recommended)",
+            font=("Arial", 9, "italic"),
+            bg="#1e1e1e",
+            fg="#9E9E9E"
+        ).pack(side=tk.LEFT)
+        
+        # Width
+        width_frame = tk.Frame(perf_frame, bg="#1e1e1e")
+        width_frame.pack(fill=tk.X, pady=5)
+        tk.Label(
+            width_frame,
+            text="Width (pixels):",
+            font=("Arial", 10),
+            bg="#1e1e1e",
+            fg="white",
+            width=20,
+            anchor="w"
+        ).pack(side=tk.LEFT)
+        width_var = tk.IntVar(value=self.camera_config.get("width", DEFAULT_WIDTH))
+        tk.Spinbox(
+            width_frame,
+            from_=640,
+            to=1920,
+            increment=160,
+            textvariable=width_var,
+            font=("Arial", 10),
+            width=10
+        ).pack(side=tk.LEFT, padx=10)
+        
+        # Height
+        height_frame = tk.Frame(perf_frame, bg="#1e1e1e")
+        height_frame.pack(fill=tk.X, pady=5)
+        tk.Label(
+            height_frame,
+            text="Height (pixels):",
+            font=("Arial", 10),
+            bg="#1e1e1e",
+            fg="white",
+            width=20,
+            anchor="w"
+        ).pack(side=tk.LEFT)
+        height_var = tk.IntVar(value=self.camera_config.get("height", DEFAULT_HEIGHT))
+        tk.Spinbox(
+            height_frame,
+            from_=480,
+            to=1080,
+            increment=120,
+            textvariable=height_var,
+            font=("Arial", 10),
+            width=10
+        ).pack(side=tk.LEFT, padx=10)
+        
+        # Exposure
+        exposure_frame = tk.Frame(perf_frame, bg="#1e1e1e")
+        exposure_frame.pack(fill=tk.X, pady=5)
+        tk.Label(
+            exposure_frame,
+            text="Exposure (lower=less blur):",
+            font=("Arial", 10),
+            bg="#1e1e1e",
+            fg="white",
+            width=20,
+            anchor="w"
+        ).pack(side=tk.LEFT)
+        exposure_var = tk.IntVar(value=self.camera_config.get("exposure", DEFAULT_EXPOSURE))
+        tk.Spinbox(
+            exposure_frame,
+            from_=-13,
+            to=0,
+            textvariable=exposure_var,
+            font=("Arial", 10),
+            width=10
+        ).pack(side=tk.LEFT, padx=10)
+        tk.Label(
+            exposure_frame,
+            text="(-6 to -10 recommended)",
+            font=("Arial", 9, "italic"),
+            bg="#1e1e1e",
+            fg="#9E9E9E"
+        ).pack(side=tk.LEFT)
+        
+        # Save button
+        def save_camera_settings():
+            self.camera_config["source_type"] = source_type.get()
+            self.camera_config["fps"] = fps_var.get()
+            self.camera_config["width"] = width_var.get()
+            self.camera_config["height"] = height_var.get()
+            self.camera_config["exposure"] = exposure_var.get()
+            
+            source_value = source_entry.get().strip()
+            try:
+                self.video_source = int(source_value)
+            except ValueError:
+                self.video_source = source_value
+            
+            self._save_camera_config()
+            messagebox.showinfo("✅ Saved", "Camera settings saved!\\nRestart tracking to apply changes.")
+            setup_window.destroy()
+        
+        tk.Button(
+            setup_window,
+            text="💾 Save Settings",
+            command=save_camera_settings,
+            font=("Arial", 12, "bold"),
+            bg="#4CAF50",
+            fg="white",
+            activebackground="#45a049",
+            width=20,
+            height=2
+        ).pack(pady=20)
     
     def _show_settings(self):
         """Show settings dialog."""
